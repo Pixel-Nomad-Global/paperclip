@@ -701,7 +701,7 @@ importers:
         version: 5.2.1
       hermes-paperclip-adapter:
         specifier: github:Pixel-Nomad-Global/hermes-paperclip-adapter#main
-        version: https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/3e19e43044d77d81f55faf3289fcce4d2ddcd1ea
+        version: https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/9f30ad5c245a05c209e4441bd513471fb36b071e
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0(@noble/hashes@2.0.1)
@@ -5417,8 +5417,8 @@ packages:
     resolution: {integrity: sha512-6CP5vxfvY4jY9XJK5zu4ZUL9aB7HHNtEMk6q7m1Pu9Gzoby1Vx5VNmVqte3NUO+1cvVK9Arj1f67xLagWkbo5Q==}
     engines: {node: '>=20.0.0'}
 
-  hermes-paperclip-adapter@https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/3e19e43044d77d81f55faf3289fcce4d2ddcd1ea:
-    resolution: {tarball: https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/3e19e43044d77d81f55faf3289fcce4d2ddcd1ea}
+  hermes-paperclip-adapter@https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/9f30ad5c245a05c209e4441bd513471fb36b071e:
+    resolution: {tarball: https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/9f30ad5c245a05c209e4441bd513471fb36b071e}
     version: 0.3.0
     engines: {node: '>=20.0.0'}
 
@@ -12531,7 +12531,7 @@ snapshots:
       '@paperclipai/adapter-utils': 2026.325.0
       picocolors: 1.1.1
 
-  hermes-paperclip-adapter@https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/3e19e43044d77d81f55faf3289fcce4d2ddcd1ea:
+  hermes-paperclip-adapter@https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/9f30ad5c245a05c209e4441bd513471fb36b071e:
     dependencies:
       '@paperclipai/adapter-utils': 2026.517.0
       picocolors: 1.1.1
