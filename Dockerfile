@@ -41,7 +41,11 @@ COPY patches/ patches/
 COPY scripts/link-plugin-dev-sdk.mjs scripts/
 
 RUN --mount=type=secret,id=GITHUB_TOKEN \
-    GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) pnpm install --frozen-lockfile
+    TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && \
+    echo "//codeload.github.com/:_authToken=${TOKEN}" >> .npmrc && \
+    echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc && \
+    pnpm install --frozen-lockfile && \
+    sed -i '/codeload.github.com/d; /npm.pkg.github.com/d' .npmrc
 
 FROM base AS build
 WORKDIR /app
