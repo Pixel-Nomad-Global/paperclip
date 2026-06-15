@@ -669,6 +669,9 @@ importers:
       '@paperclipai/shared':
         specifier: workspace:*
         version: link:../packages/shared
+      '@pixel-nomad-global/hermes-paperclip-adapter':
+        specifier: '*'
+        version: 0.3.0
       ajv:
         specifier: ^8.18.0
         version: 8.18.0
@@ -699,9 +702,6 @@ importers:
       express:
         specifier: ^5.1.0
         version: 5.2.1
-      hermes-paperclip-adapter:
-        specifier: github:Pixel-Nomad-Global/hermes-paperclip-adapter#main
-        version: https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/2a955312f24a0e1e83b5e22a5789949fd2c0b9bc
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0(@noble/hashes@2.0.1)
@@ -2529,6 +2529,10 @@ packages:
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
+
+  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.0':
+    resolution: {integrity: sha512-9Zu9mfNOE8ljTIARbylYSRaGmtWI0/1Q26Cr1qt9Nto5ZPVdK6LOk8V9NPwIQFYPVmlEZNEn9zfXwXltHCErVg==, tarball: https://npm.pkg.github.com/download/@pixel-nomad-global/hermes-paperclip-adapter/0.3.0/8e40d990b7554fba38307cb069491ee3e8a2aa63}
+    engines: {node: '>=20.0.0'}
 
   '@playwright/test@1.58.2':
     resolution: {integrity: sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA==}
@@ -5427,11 +5431,6 @@ packages:
 
   hermes-paperclip-adapter@0.2.0:
     resolution: {integrity: sha512-6CP5vxfvY4jY9XJK5zu4ZUL9aB7HHNtEMk6q7m1Pu9Gzoby1Vx5VNmVqte3NUO+1cvVK9Arj1f67xLagWkbo5Q==}
-    engines: {node: '>=20.0.0'}
-
-  hermes-paperclip-adapter@https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/2a955312f24a0e1e83b5e22a5789949fd2c0b9bc:
-    resolution: {tarball: https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/2a955312f24a0e1e83b5e22a5789949fd2c0b9bc}
-    version: 0.3.0
     engines: {node: '>=20.0.0'}
 
   hono@4.12.12:
@@ -9446,6 +9445,11 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
+  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.0':
+    dependencies:
+      '@paperclipai/adapter-utils': 2026.517.0
+      picocolors: 1.1.1
+
   '@playwright/test@1.58.2':
     dependencies:
       playwright: 1.58.2
@@ -11222,6 +11226,14 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 2.0.0
 
+  '@vitest/mocker@3.2.4(vite@7.3.1(@types/node@24.12.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))':
+    dependencies:
+      '@vitest/spy': 3.2.4
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 7.3.1(@types/node@24.12.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
+
   '@vitest/mocker@3.2.4(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))':
     dependencies:
       '@vitest/spy': 3.2.4
@@ -12551,11 +12563,6 @@ snapshots:
   hermes-paperclip-adapter@0.2.0:
     dependencies:
       '@paperclipai/adapter-utils': 2026.325.0
-      picocolors: 1.1.1
-
-  hermes-paperclip-adapter@https://codeload.github.com/Pixel-Nomad-Global/hermes-paperclip-adapter/tar.gz/2a955312f24a0e1e83b5e22a5789949fd2c0b9bc:
-    dependencies:
-      '@paperclipai/adapter-utils': 2026.517.0
       picocolors: 1.1.1
 
   hono@4.12.12: {}
@@ -14913,7 +14920,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
+      '@vitest/mocker': 3.2.4(vite@7.3.1(@types/node@24.12.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4
