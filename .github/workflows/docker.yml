@@ -53,3 +53,9 @@ jobs:
           cache-to: type=gha,mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # GH_PACKAGES_TOKEN: PAT with read:packages. The ephemeral
+          # GITHUB_TOKEN cannot read the internal hermes-paperclip-adapter
+          # package (owned by another repo; access grant is UI-only), so
+          # pnpm install inside the build 401s without this.
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.GH_PACKAGES_TOKEN }}
