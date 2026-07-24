@@ -410,6 +410,146 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
     expect(countExecuteCallsForRun(runId)).toBe(0);
   });
 
+  // ── GL-5.1 part B — concurrent-run guard ──────────────────────────────────
+  async function seedRunningOwner(input: {
+    companyId: string;
+    agentId: string;
+    issueId: string;
+    status?: "running" | "succeeded" | "failed";
+    startedAt?: Date;
+  }) {
+    const ownerRunId = randomUUID();
+    const ownerWakeupId = randomUUID();
+    await db.insert(agentWakeupRequests).values({
+      id: ownerWakeupId,
+      companyId: input.companyId,
+      agentId: input.agentId,
+      source: "automation",
+      triggerDetail: "system",
+      reason: "heartbeat_timer",
+      payload: { issueId: input.issueId },
+      status: "claimed",
+    });
+    await db.insert(heartbeatRuns).values({
+      id: ownerRunId,
+      companyId: input.companyId,
+      agentId: input.agentId,
+      invocationSource: "automation",
+      triggerDetail: "system",
+      status: input.status ?? "running",
+      startedAt: input.startedAt ?? new Date(),
+      finishedAt: (input.status ?? "running") === "running" ? null : new Date(),
+      wakeupRequestId: ownerWakeupId,
+      contextSnapshot: { issueId: input.issueId, wakeReason: "heartbeat_timer" },
+    });
+    return { ownerRunId };
+  }
+
+  it("cancels a duplicate automated wake while another run is already executing the issue", async () => {
+    const { companyId, agentId } = await seedCompanyAndAgent({ maxConcurrentRuns: 5 });
+    const issueId = randomUUID();
+    const { ownerRunId } = await seedRunningOwner({ companyId, agentId, issueId });
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "In-flight task",
+      status: "in_progress",
+      priority: "high",
+      assigneeAgentId: agentId,
+      executionRunId: ownerRunId,
+      executionLockedAt: new Date(),
+    });
+
+    // A second automated wake for the same issue while the owner is still running.
+    const { runId } = await seedQueuedRun({
+      companyId,
+      agentId,
+      issueId,
+      wakeReason: "issue_continuation_needed",
+      invocationSource: "automation",
+    });
+
+    await heartbeat.resumeQueuedRuns();
+
+    await waitForCondition(async () => {
+      const run = await db
+        .select({ status: heartbeatRuns.status })
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+      return run?.status === "cancelled";
+    });
+
+    const [run, owner, issue] = await Promise.all([
+      db
+        .select({ status: heartbeatRuns.status, errorCode: heartbeatRuns.errorCode })
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({ status: heartbeatRuns.status })
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, ownerRunId))
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({ executionRunId: issues.executionRunId })
+        .from(issues)
+        .where(eq(issues.id, issueId))
+        .then((rows) => rows[0] ?? null),
+    ]);
+
+    expect(run?.status).toBe("cancelled");
+    expect(run?.errorCode).toBe("run_already_in_flight");
+    expect(countExecuteCallsForRun(runId)).toBe(0); // no duplicate work
+    expect(owner?.status).toBe("running"); // owner run untouched
+    expect(issue?.executionRunId).toBe(ownerRunId); // owner's lock preserved
+  });
+
+  it("does not apply the concurrent-run guard once the lock owner is no longer running", async () => {
+    const { companyId, agentId } = await seedCompanyAndAgent({ maxConcurrentRuns: 5 });
+    const issueId = randomUUID();
+    // Lock left pointing at a run that already finished (stale executionRunId).
+    const { ownerRunId } = await seedRunningOwner({ companyId, agentId, issueId, status: "succeeded" });
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Task with stale lock",
+      status: "in_progress",
+      priority: "high",
+      assigneeAgentId: agentId,
+      executionRunId: ownerRunId,
+      executionLockedAt: new Date(),
+    });
+
+    const { runId } = await seedQueuedRun({
+      companyId,
+      agentId,
+      issueId,
+      wakeReason: "issue_continuation_needed",
+      invocationSource: "automation",
+    });
+
+    await heartbeat.resumeQueuedRuns();
+
+    // The guard must NOT fire: the run proceeds to execute rather than being cancelled.
+    await waitForCondition(async () => {
+      const run = await db
+        .select({ status: heartbeatRuns.status })
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+      return run?.status === "running" || run?.status === "succeeded";
+    });
+
+    const run = await db
+      .select({ status: heartbeatRuns.status, errorCode: heartbeatRuns.errorCode })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.id, runId))
+      .then((rows) => rows[0] ?? null);
+    expect(run?.errorCode).not.toBe("run_already_in_flight");
+    expect(["running", "succeeded"]).toContain(run?.status);
+  });
+
   it("cancels queued max-turn continuations when the issue is no longer in_progress before the run starts", async () => {
     const { companyId, agentId } = await seedCompanyAndAgent();
     const issueId = randomUUID();

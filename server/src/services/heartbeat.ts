@@ -227,6 +227,14 @@ const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_JITTER_RATIO = 0.25;
 const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON = "transient_failure";
 const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_WAKE_REASON = "transient_failure_retry";
 const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS = BOUNDED_TRANSIENT_HEARTBEAT_RETRY_DELAYS_MS.length;
+// GL-5.1 part B: a queued automated wake is treated as a duplicate if the
+// issue's execution lock is held by a different run that is still "running" AND
+// started within this window. The freshness bound stops a lock left behind by a
+// crashed run (whose status never left "running") from wedging the issue — the
+// liveness engine normally reaps such runs, this is a backstop. Comfortably
+// above any real run (longest observed ~211s); below the sandbox 4h backstop.
+const CONCURRENT_RUN_LOCK_MAX_AGE_MS = 30 * 60 * 1000;
+
 export const MAX_TURN_CONTINUATION_RETRY_REASON = "max_turns_continuation";
 export const MAX_TURN_CONTINUATION_WAKE_REASON = "max_turns_continuation_retry";
 const MAX_TURN_CONTINUATION_DEFAULT_MAX_ATTEMPTS = 2;
@@ -6173,7 +6181,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           | "issue_not_in_progress"
           | "issue_execution_lock_changed"
           | "issue_review_participant_changed"
-          | "issue_continuation_waiting_on_review";
+          | "issue_continuation_waiting_on_review"
+          | "run_already_in_flight";
         details: Record<string, unknown>;
       };
 
@@ -6305,6 +6314,49 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             },
           };
         }
+      }
+    }
+
+    // ── GL-5.1 part B — concurrent-run guard ──────────────────────────────
+    // Paperclip's run concurrency gate is per-agent, not per-issue, and the
+    // execution-lock stamp in claimQueuedRun is best-effort (a run still
+    // proceeds even if it failed to take issues.executionRunId). So a second
+    // automated wake for an issue that already has a run in flight would
+    // otherwise execute concurrently, duplicating side effects on one issue.
+    // If the execution lock is held by a DIFFERENT run that is still actively
+    // running (within the freshness bound), and this is an automated wake — not
+    // user input, a mention/interaction wake, or an explicit resume — cancel
+    // this wake as a duplicate before it flips to running and does any work.
+    // (The adapter-side guard, part A, covers the tighter in-process race; this
+    // is the authoritative cross-dispatch check.)
+    if (
+      issue.executionRunId &&
+      issue.executionRunId !== run.id &&
+      !isInteractionWake &&
+      !wakeCommentId &&
+      !resumeIntent
+    ) {
+      const owner = await db
+        .select({ status: heartbeatRuns.status, startedAt: heartbeatRuns.startedAt })
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, issue.executionRunId))
+        .then((rows) => rows[0] ?? null);
+      const ownerAgeMs = owner?.startedAt
+        ? Date.now() - new Date(owner.startedAt).getTime()
+        : Infinity;
+      if (owner?.status === "running" && ownerAgeMs < CONCURRENT_RUN_LOCK_MAX_AGE_MS) {
+        return {
+          stale: true,
+          errorCode: "run_already_in_flight",
+          reason: `Cancelled because run ${issue.executionRunId} is already executing this issue (concurrent-run guard)`,
+          details: {
+            issueId,
+            activeRunId: issue.executionRunId,
+            thisRunId: run.id,
+            wakeReason,
+            retryReason,
+          },
+        };
       }
     }
 
