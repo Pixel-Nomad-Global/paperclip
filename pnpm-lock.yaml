@@ -670,8 +670,8 @@ importers:
         specifier: workspace:*
         version: link:../packages/shared
       '@pixel-nomad-global/hermes-paperclip-adapter':
-        specifier: ^0.3.2
-        version: 0.3.2
+        specifier: ^0.3.3
+        version: 0.3.3
       ajv:
         specifier: ^8.18.0
         version: 8.18.0
@@ -2530,8 +2530,8 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
-  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.2':
-    resolution: {integrity: sha512-h3dV6zA8Hj3ix+yTebOz404L0N8ewycdZa0Xth65hitddIxgE4mJIWH76QjnOAEtCTdo0ucDjqwbpVXIhazw+A==, tarball: https://npm.pkg.github.com/download/@pixel-nomad-global/hermes-paperclip-adapter/0.3.2/9091e2834ae9b1834aea13bca1181c1c62bd1b1c}
+  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.3':
+    resolution: {integrity: sha512-Fh4euN0OIpkMVA0/rXazXzw68a4hgPyy59C42pevmNquqs0cuODAsWCrFL9p4iks37m+WMPMnN/bhkH4NaoiSw==, tarball: https://npm.pkg.github.com/download/@pixel-nomad-global/hermes-paperclip-adapter/0.3.3/0a826baeb7e5906c784a229549ce39638bffd8ee}
     engines: {node: '>=20.0.0'}
 
   '@playwright/test@1.58.2':
@@ -9445,7 +9445,7 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.2':
+  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.3':
     dependencies:
       '@paperclipai/adapter-utils': 2026.517.0
       picocolors: 1.1.1
