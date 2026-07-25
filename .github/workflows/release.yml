@@ -72,7 +72,12 @@ jobs:
         run: pnpm build
 
   publish_canary:
-    if: github.event_name == 'push'
+    # Fork guard: the paperclip packages are published to public npm only from the
+    # upstream repo. On the Pixel-Nomad-Global fork we consume paperclip as a Docker
+    # image, never as npm packages, so this job is skipped (it would otherwise fail
+    # with ENEEDAUTH against registry.npmjs.org). verify_canary still runs on the
+    # fork for coverage.
+    if: github.event_name == 'push' && github.repository == 'paperclipai/paperclip'
     needs: verify_canary
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -227,7 +232,8 @@ jobs:
           ./scripts/release.sh "${args[@]}"
 
   publish_stable:
-    if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+    # Fork guard: real npm publish runs only from the upstream repo (see publish_canary).
+    if: github.event_name == 'workflow_dispatch' && !inputs.dry_run && github.repository == 'paperclipai/paperclip'
     needs: verify_stable
     runs-on: ubuntu-latest
     timeout-minutes: 45
