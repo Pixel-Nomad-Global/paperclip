@@ -35,6 +35,12 @@ jobs:
           cache: pnpm
 
       - name: Refresh pnpm lockfile
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so the lockfile
+        # refresh can resolve the internal @pixel-nomad-global/hermes-paperclip-adapter
+        # package from GitHub Packages; the ephemeral workflow token can't read it.
+        # Per-step only — the PR-create / push steps below keep the repo-scoped token.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
 
       - name: Fail on unexpected file changes

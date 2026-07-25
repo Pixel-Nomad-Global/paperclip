@@ -27,8 +27,18 @@ jobs:
           # do not masquerade as changes made by the PR itself.
           changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
           if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
-            echo "Do not commit pnpm-lock.yaml in pull requests. CI owns lockfile updates."
-            exit 1
+            # Fork policy: a lockfile change is allowed when it accompanies a
+            # package.json change (a real dependency bump — e.g. bumping the pinned
+            # hermes-paperclip-adapter version). A lockfile-only edit is still a
+            # hand-tweak and stays blocked; CI / the Refresh Lockfile bot own those.
+            # See operations/runbooks/image-build-release-pipeline.md ("Dependency
+            # bumps & the lockfile policy") in the pixel-nomad knowledge base.
+            if printf '%s\n' "$changed" | grep -Eq '(^|/)package\.json$'; then
+              echo "pnpm-lock.yaml changed alongside a package.json — allowed (dependency change)."
+            else
+              echo "Do not commit a standalone pnpm-lock.yaml edit. Pair it with the package.json change, or let CI / the Refresh Lockfile bot own it."
+              exit 1
+            fi
           fi
 
       - name: Setup pnpm
