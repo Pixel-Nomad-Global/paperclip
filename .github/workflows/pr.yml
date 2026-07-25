@@ -55,6 +55,10 @@ jobs:
             node ./scripts/check-release-package-bootstrap.mjs "${changed_paths[@]}"
 
       - name: Validate dependency resolution when manifests change
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so the lockfile
+        # refresh can resolve the internal @pixel-nomad-global adapter package.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
           manifest_pattern='(^|/)package\.json$|^pnpm-workspace\.yaml$|^\.npmrc$|^pnpmfile\.(cjs|js|mjs)$'
@@ -84,6 +88,12 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck workspaces whose build scripts skip TypeScript
@@ -124,6 +134,12 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --frozen-lockfile
 
       - name: Run grouped general test suites
@@ -170,6 +186,12 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --frozen-lockfile
 
       - name: Build
@@ -213,6 +235,12 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --frozen-lockfile
 
       - name: Run serialized server test shard
@@ -240,6 +268,12 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --frozen-lockfile
 
       # `release.sh` always executes its Step 2/7 workspace build, even when
@@ -271,6 +305,12 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright

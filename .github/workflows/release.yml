@@ -54,6 +54,12 @@ jobs:
         run: node ./scripts/release-package-map.mjs check
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck
@@ -96,6 +102,12 @@ jobs:
         run: node ./scripts/release-package-map.mjs check
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --no-frozen-lockfile
 
       - name: Restore tracked install-time changes
@@ -149,6 +161,12 @@ jobs:
         run: node ./scripts/release-package-map.mjs check
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck
@@ -190,6 +208,12 @@ jobs:
         run: node ./scripts/release-package-map.mjs check
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --no-frozen-lockfile
 
       - name: Dry-run stable release
@@ -231,6 +255,12 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: pnpm install --no-frozen-lockfile
 
       - name: Restore tracked install-time changes
