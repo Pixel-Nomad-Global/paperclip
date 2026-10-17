@@ -587,11 +587,21 @@ export function createPostgresRunDispatchAdapter(
     const readiness = issue && retryReasonKind === "native_safe_replacement"
       ? (await issueService(dbOrTx).listDependencyReadiness(input.companyId, [issueId])).get(issueId)
       : null;
+    // Pixel Nomad fork (GL-5.1): the run holding the execution lock, if it is another run.
+    const executionLockOwner =
+      issue?.executionRunId && issue.executionRunId !== input.runId
+        ? await dbOrTx
+            .select({ status: heartbeatRuns.status, startedAt: heartbeatRuns.startedAt })
+            .from(heartbeatRuns)
+            .where(eq(heartbeatRuns.id, issue.executionRunId))
+            .then((rows) => rows[0] ?? null)
+        : null;
     return {
       runId: input.runId,
       runAgentId: input.agentId,
       issueId,
       retryReasonKind,
+      executionLockOwner,
       dependenciesBlocked: readiness && !readiness.isDependencyReady ? {
         unresolvedBlockerIssueIds: readiness.unresolvedBlockerIssueIds,
         unresolvedBlockerCount: readiness.unresolvedBlockerCount,

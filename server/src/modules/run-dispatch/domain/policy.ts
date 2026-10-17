@@ -117,7 +117,9 @@ export type QueuedRunStalenessErrorCode =
   | "issue_execution_lock_changed"
   | "issue_blocked"
   | "issue_review_participant_changed"
-  | "issue_continuation_waiting_on_review";
+  | "issue_continuation_waiting_on_review"
+  // Pixel Nomad fork (GL-5.1): a different run is already executing this issue.
+  | "run_already_in_flight";
 
 export type StalenessDecision =
   | { stale: false }
@@ -163,7 +165,19 @@ export type QueuedRunFacts = {
   retryReason: string | null;
 
   reviewParticipant: ReviewParticipantFacts;
+
+  /**
+   * Pixel Nomad fork (GL-5.1): the run holding the issue execution lock, when that is a
+   * different run. Loaded only then; absent elsewhere, which disables the guard.
+   */
+  executionLockOwner?: { status: string; startedAt: Date | null } | null;
 };
+
+// Pixel Nomad fork (GL-5.1): a queued automated wake is a duplicate if the issue's execution
+// lock is held by a different run that is still "running" AND started within this window. The
+// bound stops a lock left by a crashed run (status never left "running") from wedging the
+// issue. Comfortably above any real run (longest observed ~211s); below the sandbox 4h backstop.
+export const CONCURRENT_RUN_LOCK_MAX_AGE_MS = 30 * 60 * 1000;
 
 type OwnershipFacts = {
   runAgentId: string;
@@ -675,6 +689,41 @@ export function decideQueuedRunStaleness(
         currentParticipant: facts.reviewParticipant.currentParticipant,
       },
     };
+  }
+
+  // Pixel Nomad fork (GL-5.1 part B): Paperclip's run concurrency gate is per-agent, not
+  // per-issue, and the execution-lock stamp on claim is best-effort, so a second automated
+  // wake for an issue already in flight would run concurrently and duplicate side effects
+  // (two POST /process, two runs). User input (comments, mentions, interaction wakes,
+  // explicit resume) is never blocked. Since v2026.1012.0 upstream serializes issue claims and
+  // queues a second *assignment* wake behind the running one by design, so assignment wakes
+  // are left to that; the guard still cancels duplicate continuation and timer wakes, the
+  // GL-5.1 incident (issue_continuation_needed racing an in-flight run).
+  const owner = facts.executionLockOwner;
+  if (
+    owner &&
+    facts.issueExecutionRunId &&
+    facts.issueExecutionRunId !== facts.runId &&
+    facts.wakeReason !== "issue_assigned" &&
+    !facts.isInteractionWake &&
+    !facts.wakeCommentIdPresent &&
+    !facts.resumeIntent
+  ) {
+    const ownerAgeMs = owner.startedAt ? _now.getTime() - owner.startedAt.getTime() : Infinity;
+    if (owner.status === "running" && ownerAgeMs < CONCURRENT_RUN_LOCK_MAX_AGE_MS) {
+      return {
+        stale: true,
+        errorCode: "run_already_in_flight",
+        reason: `Cancelled because run ${facts.issueExecutionRunId} is already executing this issue (concurrent-run guard)`,
+        details: {
+          issueId: facts.issueId,
+          activeRunId: facts.issueExecutionRunId,
+          thisRunId: facts.runId,
+          wakeReason: facts.wakeReason,
+          retryReason: facts.retryReason,
+        },
+      };
+    }
   }
 
   return { stale: false };

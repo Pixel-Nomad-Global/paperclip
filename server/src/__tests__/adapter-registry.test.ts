@@ -146,10 +146,11 @@ describe("server adapter registry", () => {
 
     expect(builtInLocal).not.toBeNull();
     expect(builtInLocal?.supportsLocalAgentJwt).toBe(true);
-    expect(builtInLocal?.supportsInstructionsBundle).toBe(true);
+    // Pixel Nomad fork: hermes_local is our adapter with the pre-merge wrapper, which has
+    // run production since May without an instructions bundle or a config schema.
+    expect(builtInLocal?.supportsInstructionsBundle).toBe(false);
     expect(builtInLocal?.requiresMaterializedRuntimeSkills).toBe(false);
     expect(builtInLocal?.detectModel).toBeTypeOf("function");
-    expect(builtInLocal?.getConfigSchema).toBeTypeOf("function");
 
     expect(builtInGateway).not.toBeNull();
     expect(builtInGateway?.supportsLocalAgentJwt).toBe(false);

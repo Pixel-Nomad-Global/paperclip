@@ -1731,6 +1731,41 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
   });
 
   // Pixel Nomad fork: GL-5.1 per-issue concurrent-run guard (fork #3).
+  async function seedRunningOwner(input: {
+    companyId: string;
+    agentId: string;
+    issueId: string;
+    status?: "running" | "succeeded" | "failed";
+    startedAt?: Date;
+  }) {
+    const ownerRunId = randomUUID();
+    const ownerWakeupId = randomUUID();
+    await db.insert(agentWakeupRequests).values({
+      id: ownerWakeupId,
+      companyId: input.companyId,
+      agentId: input.agentId,
+      source: "automation",
+      triggerDetail: "system",
+      reason: "heartbeat_timer",
+      payload: { issueId: input.issueId },
+      status: "claimed",
+    });
+    await db.insert(heartbeatRuns).values({
+      id: ownerRunId,
+      companyId: input.companyId,
+      agentId: input.agentId,
+      invocationSource: "automation",
+      triggerDetail: "system",
+      status: input.status ?? "running",
+      startedAt: input.startedAt ?? new Date(),
+      finishedAt: (input.status ?? "running") === "running" ? null : new Date(),
+      wakeupRequestId: ownerWakeupId,
+      contextSnapshot: { issueId: input.issueId, wakeReason: "heartbeat_timer" },
+    });
+    return { ownerRunId };
+  }
+
+
   it("cancels a duplicate automated wake while another run is already executing the issue", async () => {
     const { companyId, agentId } = await seedCompanyAndAgent({ maxConcurrentRuns: 5 });
     const issueId = randomUUID();
