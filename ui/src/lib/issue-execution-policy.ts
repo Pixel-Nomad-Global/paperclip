@@ -1,14 +1,8 @@
 import type { IssueExecutionPolicy, IssueExecutionStageParticipant, IssueExecutionStagePrincipal } from "@paperclipai/shared";
 import { parseAssigneeValue } from "./assignees";
+import { createUuid as newId } from "./uuid";
 
 type StageType = "review" | "approval";
-
-function newId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `stage-${Math.random().toString(36).slice(2)}`;
-}
 
 function principalKey(principal: IssueExecutionStagePrincipal | IssueExecutionStageParticipant) {
   return principal.type === "agent" ? `agent:${principal.agentId}` : `user:${principal.userId}`;

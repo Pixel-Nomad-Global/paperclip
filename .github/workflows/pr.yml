@@ -109,14 +109,15 @@ jobs:
       - name: Typecheck workspaces whose build scripts skip TypeScript
         run: pnpm run typecheck:build-gaps
 
-      - name: Verify release registry test coverage
-        run: pnpm run test:release-registry
+      # Pixel Nomad fork: test:release-registry is not run. It asserts upstream's npm and cloud
+      # release workflows (release.yml channels, cloud-migrator-artifacts.yml, ...), which the
+      # fork replaces with its own docker.yml image build. Dropped at the v2026.1012.0 merge.
 
   general_tests:
     name: General tests (${{ matrix.group_label }})
     needs: [policy]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40  # fork: the upstream server suite outgrew 20 min at v2026.1012.0
     strategy:
       fail-fast: false
       matrix:
