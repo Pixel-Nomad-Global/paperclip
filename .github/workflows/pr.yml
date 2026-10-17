@@ -117,7 +117,7 @@ jobs:
     name: General tests (${{ matrix.group_label }})
     needs: [policy]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40  # fork: the upstream server suite outgrew 20 min at v2026.1012.0
     strategy:
       fail-fast: false
       matrix:

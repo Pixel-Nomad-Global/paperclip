@@ -178,6 +178,11 @@ export type QueuedRunFacts = {
 // bound stops a lock left by a crashed run (status never left "running") from wedging the
 // issue. Comfortably above any real run (longest observed ~211s); below the sandbox 4h backstop.
 export const CONCURRENT_RUN_LOCK_MAX_AGE_MS = 30 * 60 * 1000;
+// Pixel Nomad fork (GL-5.1): the automated wakes the guard applies to. Nothing else.
+export const CONCURRENT_RUN_GUARD_WAKE_REASONS: ReadonlySet<string> = new Set([
+  "issue_continuation_needed",
+  "heartbeat_timer",
+]);
 
 type OwnershipFacts = {
   runAgentId: string;
@@ -696,15 +701,15 @@ export function decideQueuedRunStaleness(
   // wake for an issue already in flight would run concurrently and duplicate side effects
   // (two POST /process, two runs). User input (comments, mentions, interaction wakes,
   // explicit resume) is never blocked. Since v2026.1012.0 upstream serializes issue claims and
-  // queues a second *assignment* wake behind the running one by design, so assignment wakes
-  // are left to that; the guard still cancels duplicate continuation and timer wakes, the
-  // GL-5.1 incident (issue_continuation_needed racing an in-flight run).
+  // runs its own automated flows (assignments queued by design, execution recovery, restarts),
+  // so the guard is an allowlist: only the wake reasons of the GL-5.1 incident.
   const owner = facts.executionLockOwner;
   if (
     owner &&
     facts.issueExecutionRunId &&
     facts.issueExecutionRunId !== facts.runId &&
-    facts.wakeReason !== "issue_assigned" &&
+    facts.wakeReason !== null &&
+    CONCURRENT_RUN_GUARD_WAKE_REASONS.has(facts.wakeReason) &&
     !facts.isInteractionWake &&
     !facts.wakeCommentIdPresent &&
     !facts.resumeIntent
