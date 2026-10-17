@@ -262,7 +262,8 @@ describe("adapter routes", () => {
     expect(hermesLocal).toBeDefined();
     expect(hermesLocal.source).toBe("builtin");
     expect(hermesLocal.capabilities).toMatchObject({
-      supportsInstructionsBundle: true,
+      // Pixel Nomad fork: our hermes_local has run without an instructions bundle since May.
+      supportsInstructionsBundle: false,
       supportsSkills: true,
       supportsLocalAgentJwt: true,
       requiresMaterializedRuntimeSkills: false,

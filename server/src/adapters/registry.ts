@@ -97,6 +97,7 @@ import {
 } from "@paperclipai/adapter-kimi-local";
 import {
   createHermesGatewayServerAdapter,
+  createHermesLocalServerAdapter,
 } from "@paperclipai/hermes-paperclip-adapter";
 import {
   execute as openCodeExecute,
@@ -910,6 +911,9 @@ const hermesLocalAdapter: ServerAdapterModule = {
   requiresMaterializedRuntimeSkills: false,
   agentConfigurationDoc: hermesAgentConfigurationDoc,
   detectModel: () => detectModelFromHermes(),
+  // Pixel Nomad fork: upstream's form schema for the agent settings UI (provider, timeoutSec,
+  // ...). UI only; execution stays on our adapter above.
+  getConfigSchema: createHermesLocalServerAdapter().getConfigSchema,
 };
 
 const openclawGatewayAdapter: ServerAdapterModule = {
