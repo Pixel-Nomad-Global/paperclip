@@ -1,4 +1,4 @@
-import type { PauseReason, ProjectStatus } from "../constants.js";
+import type { BudgetWindowKind, PauseReason, ProjectStatus } from "../constants.js";
 import type {
   ProjectExecutionWorkspacePolicy,
   ProjectWorkspaceRuntimeConfig,
@@ -12,6 +12,17 @@ export type ProjectWorkspaceVisibility = "default" | "advanced";
 export interface ProjectGoalRef {
   id: string;
   title: string;
+}
+
+/**
+ * Lightweight per-project budget summary surfaced on the projects list payload
+ * (IA Phase 4 — PAP-60). Reflects the active `billed_cents` budget policy scoped
+ * to the project, when one is set.
+ */
+export interface ProjectBudgetSummary {
+  /** Budget limit in cents. */
+  amountCents: number;
+  windowKind: BudgetWindowKind;
 }
 
 export interface ProjectWorkspace {
@@ -64,6 +75,19 @@ export interface ProjectManagedByPlugin {
   updatedAt: Date;
 }
 
+export interface ProjectDiscoverySummary {
+  id: string;
+  name: string;
+  status: string;
+  description: string | null;
+  descriptionTruncated: boolean;
+}
+
+export interface ProjectDiscoveryPage {
+  projects: ProjectDiscoverySummary[];
+  nextCursor: string | null;
+}
+
 export interface Project {
   id: string;
   companyId: string;
@@ -78,6 +102,7 @@ export interface Project {
   leadAgentId: string | null;
   targetDate: string | null;
   color: string | null;
+  icon: string | null;
   env: AgentEnvConfig | null;
   pauseReason: PauseReason | null;
   pausedAt: Date | null;
@@ -86,7 +111,34 @@ export interface Project {
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;
   managedByPlugin?: ProjectManagedByPlugin | null;
+  /**
+   * Number of tasks (issues) in the project. Populated by the projects list
+   * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.
+   */
+  taskCount?: number;
+  /**
+   * Active budget for the project, when set. Populated by the projects list
+   * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.
+   */
+  budget?: ProjectBudgetSummary | null;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** GitHub identity is the provider's stable repository ID, never a credential. */
+export interface ProjectRepository {
+  id: string;
+  fullName: string;
+  url: string;
+  private?: boolean;
+  connections: string[];
+  connectionIds?: string[];
+}
+
+export interface ProjectRepositoryOptions {
+  connections?: Array<{ id: string; name: string }>;
+  repositories: ProjectRepository[];
+  connectionCount: number;
+  failedConnectionCount: number;
 }

@@ -12,6 +12,9 @@ It is intentionally narrower than [PLUGIN_SPEC.md](./PLUGIN_SPEC.md). The spec i
 - Plugin UI runs as same-origin JavaScript inside the main Paperclip app.
 - Worker-side host APIs are capability-gated.
 - Plugin UI is not sandboxed by manifest capabilities.
+- External object reference providers are trusted-install only in the MVP.
+  Capabilities gate provider detection/resolution and host API calls, but they
+  are not a sandbox boundary for untrusted marketplace code.
 - Plugin database migrations are restricted to a host-derived plugin namespace.
 - Plugin-managed surfaces are first-class records (agents, projects, routines, and
   skills) rather than private plugin-only state.
@@ -21,6 +24,29 @@ It is intentionally narrower than [PLUGIN_SPEC.md](./PLUGIN_SPEC.md). The spec i
   `@paperclipai/plugin-sdk/ui`; use it for common Paperclip controls before
   building custom versions.
 - `ctx.assets` is not supported in the current runtime.
+
+## External object reference providers
+
+Plugins can contribute provider-neutral object reference detection and status
+resolution for URLs and future explicit links. Declare `objectReferences` in the
+manifest and add at least `external.objects.detect` and `external.objects.read`.
+
+```ts
+objectReferences: [
+  {
+    providerKey: "mocktracker",
+    displayName: "Mock Tracker",
+    objectTypes: ["ticket"],
+    urlPatterns: ["https://mock.example/tickets/:id"],
+  },
+],
+```
+
+Implement `onDetectExternalObjects()` in the worker to recognize sanitized URL
+candidates and return provider-stable identities. Implement
+`onResolveExternalObject()` to return normalized board-safe status metadata.
+Paperclip owns inline markdown rendering; plugins must not return React, HTML,
+or `dangerouslySetInnerHTML` content for inline references.
 
 ## Scaffold a plugin
 
@@ -57,6 +83,17 @@ pnpm build
 ```
 
 ## Supported alpha surface
+
+### CreateOS sandbox provider
+
+The in-repo [`@paperclipai/plugin-createos`](../../packages/plugins/sandbox-providers/createos/README.md)
+package implements environment lifecycle hooks and incremental managed-process
+output and binary workspace transfers using CreateOS's public HTTP API. It does
+not advertise interactive login or template capture. Install
+the built package by local path; its optional managed-image catalog key is
+`createos`. The package README describes configuration and the opt-in live smoke.
+
+### Worker APIs
 
 Worker:
 
@@ -331,10 +368,28 @@ Mount surfaces currently wired in the host include:
 - `taskDetailView`
 - `projectSidebarItem`
 - `globalToolbarButton`
+- `appShellOverlay` (persistent, signed-in application shell)
+- `organizationSwitcher` (one React contribution replacing the organization menu)
 - `toolbarButton`
 - `contextMenuItem`
 - `commentAnnotation`
 - `commentContextMenuItem`
+
+### `routeSidebar` and the app sidebar
+
+A `routeSidebar` slot gives a plugin page route its own contextual navigation.
+It **coexists** with the main app sidebar rather than replacing it: while your
+route is active the host collapses the app `<Sidebar/>` to its 64px icon rail
+(still hover/peek-able) and renders your sidebar in a second pane, yielding
+`[ app rail ][ your sidebar ][ content ]`.
+
+Because the host drives this collapse, a plugin should **not** mount
+`RequestCollapsedSidebar` or otherwise try to collapse the app sidebar itself —
+doing so is redundant and fights the host. While your route is active the app
+rail is forced collapsed (its expand toggle is hidden), overriding any user pin
+— a secondary sidebar always collapses the primary. This force never changes the
+user's saved expanded/collapsed preference, so the host restores exactly what
+the user chose as soon as they navigate away.
 
 ## Shared host components
 
@@ -560,3 +615,24 @@ pnpm -r typecheck
 pnpm test:run
 pnpm build
 ```
+
+For image-supplied plugins and the persistent shell lifecycle, see
+[Distribution plugins](DISTRIBUTION-PLUGINS.md).
+
+### Organization switcher
+
+Declare one `organizationSwitcher` slot with `ui.sidebar.register`. The host
+passes `PluginOrganizationSwitcherProps`: current company display data, collapsed
+and open state, navigation/logout callbacks, and an icon renderer. Use the host
+logout callback; authenticate remote account requests at their owning service.
+`currentCompany` describes the host-local company. A distribution plugin must
+resolve its external account/organization label itself; the host does not fetch
+that portfolio on the plugin's behalf.
+The slot props and `useHostContext()` are display context, not proof of identity.
+The host reserves the trigger with a neutral placeholder while account, company,
+and plugin discovery load. Plugins should reserve the same space while their
+external label loads and retain resolved labels during same-account refreshes.
+The host resets plugin state on account/company changes and keeps its built-in
+menu when no unique contribution exists, discovery fails, the module is missing,
+or rendering throws. The slot is a React-only contract; do not use a custom
+element export. This replaces only the menu, not company policy or authorization.

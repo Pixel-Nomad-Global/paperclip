@@ -47,7 +47,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # Upstream's Dockerfile ends in a `cloud` stage (their hosted product) and builds a
+          # Rust runner; we ship `production`, amd64 only (the VPS), since v2026.1012.0.
+          target: production
+          platforms: linux/amd64
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
