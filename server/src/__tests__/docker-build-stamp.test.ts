@@ -126,7 +126,9 @@ describe("Standard image remote provider pack", () => {
     expect(dockerfile).not.toContain("provision-grok.mjs");
   });
 
-  it("lets explicit cloud preview builds inherit the same pack and configuration", () => {
+  // Pixel Nomad fork: skipped. It asserts `target: cloud` in upstream's release.yml (their
+  // hosted product); the fork's release.yml builds no cloud image.
+  it.skip("lets explicit cloud preview builds inherit the same pack and configuration", () => {
     const cloud = stageBody(dockerfile, "cloud");
     expect(cloud).toContain("FROM production AS cloud");
     expect(cloud).not.toContain("/opt/paperclip-runner/provider-pack");

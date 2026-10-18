@@ -50,6 +50,10 @@ jobs:
           # Upstream's Dockerfile ends in a `cloud` stage (their hosted product) and builds a
           # Rust runner; we ship `production`, amd64 only (the VPS), since v2026.1012.0.
           target: production
+          # As upstream's production build: stamps the commit into dist/build-info.json and the
+          # image env, and qualifies the runner provider pack. Without it the image is unstamped.
+          build-args: |
+            PAPERCLIP_BUILD_COMMIT=${{ github.sha }}
           platforms: linux/amd64
           push: true
           cache-from: type=gha
