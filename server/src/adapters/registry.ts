@@ -853,6 +853,9 @@ const executeHermesLocal = hermesExecute as unknown as ServerAdapterModule["exec
 
 const hermesLocalAdapter: ServerAdapterModule = {
   type: "hermes_local",
+  // As upstream's hermes_local. Without it the heartbeat defaults to invocation_context and
+  // puts the runtime-tools bearer token into the adapter context, which our adapter never reads.
+  runtimeToolDelivery: "environment",
   execute: async (ctx) => {
     const normalizedCtx = normalizeHermesConfig(ctx);
     if (!normalizedCtx.authToken) return executeHermesLocal(normalizedCtx);

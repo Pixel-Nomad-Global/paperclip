@@ -11,13 +11,16 @@ permissions:
   contents: read
   packages: write
 
+# As upstream: one group per ref for the whole run, and a newer push waits instead of
+# killing a build that is already pushing (pixel-nomad-infra pins these images by tag).
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    concurrency:
-      group: docker-${{ github.ref }}
-      cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,3 +69,16 @@ jobs:
           # pnpm install inside the build 401s without this.
           secrets: |
             GITHUB_TOKEN=${{ secrets.GH_PACKAGES_TOKEN }}
+
+      # As upstream: PID 1 must be an init that reaps adopted orphans. Every Paperclip task
+      # here is a `docker exec` from the hermes stub; unreaped orphans pin as zombies until
+      # the cgroup pid limit is reached and every fork() in the container fails.
+      - name: Verify PID 1 reaps orphaned processes
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          image="$(printf '%s\n' "$IMAGE_TAGS" | head -n 1)"
+          test -n "$image"
+          echo "Verifying orphan reaping in $image"
+          docker run --rm -i --pull always "$image" sh -s < scripts/assert-orphan-reaping.sh
