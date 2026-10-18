@@ -1,5 +1,18 @@
 name: PR
 
+# Pixel Nomad fork: this is upstream's pr-trusted.yml (v2026.1012.0) flattened into one
+# workflow. Keep the name "PR": scripts/run-vitest-stable.mjs reads GITHUB_WORKFLOW and,
+# under "PR", moves the native-runner server suite out of the server shards into the last
+# Verify Paperclip Runner vitest shard. Departures from upstream, each marked "fork:":
+# - no `gate` job: every lane runs on GitHub-hosted ubuntu-latest (upstream routes trusted
+#   authors to an AWS RunsOn fleet) and every PR runs full CI (no stacked-PR scope);
+# - GH_PACKAGES_TOKEN on every pnpm install, for the @pixel-nomad-global adapter package;
+# - the fork's lockfile policy (a lockfile change is allowed alongside a package.json change);
+# - no test:release-registry, no workflow-wiring self-tests for workflows the fork deleted,
+#   no Grok public-npm check, no Rust cache (its writer is upstream's release-verify.yml).
+# When merging upstream, diff upstream's pr-trusted.yml against the previous tag and carry
+# lane changes (shard counts, new jobs, new policy checks) across by hand.
+
 on:
   pull_request:
 
@@ -8,8 +21,798 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  ci:
-    # Master requires CODEOWNERS review for .github/**, including this workflow.
-    # The AWS runner group permits pr-trusted.yml@refs/heads/master.
-    uses: paperclipai/paperclip/.github/workflows/pr-trusted.yml@master
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Block manual lockfile edits
+        if: >-
+          github.head_ref != 'chore/refresh-lockfile' &&
+          github.event.pull_request.user.login != 'dependabot[bot]'
+        run: |
+          # Diff the PR branch against its merge base so recent base-branch commits
+          # do not masquerade as changes made by the PR itself.
+          changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
+          if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
+            # Fork policy: a lockfile change is allowed when it accompanies a
+            # package.json change (a real dependency bump — e.g. bumping the pinned
+            # hermes-paperclip-adapter version). A lockfile-only edit is still a
+            # hand-tweak and stays blocked; CI / the Refresh Lockfile bot own those.
+            # See operations/runbooks/image-build-release-pipeline.md ("Dependency
+            # bumps & the lockfile policy") in the pixel-nomad knowledge base.
+            if printf '%s\n' "$changed" | grep -Eq '(^|/)package\.json$'; then
+              echo "pnpm-lock.yaml changed alongside a package.json — allowed (dependency change)."
+            else
+              echo "Do not commit a standalone pnpm-lock.yaml edit. Pair it with the package.json change, or let CI / the Refresh Lockfile bot own it."
+              exit 1
+            fi
+          fi
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Validate migration ordering against target branch
+        run: >-
+          node .github/scripts/check-pr-migration-order.mjs
+          "${{ github.event.pull_request.base.sha }}"
+          "${{ github.event.pull_request.head.sha }}"
+
+      - name: Validate Dockerfile deps stage
+        run: node ./scripts/check-docker-deps-stage.mjs
+
+      - name: Validate Node version policy
+        run: pnpm check:node-version
+
+      - name: Reject git push in adapter/runtime code
+        run: node ./scripts/check-no-git-push.mjs
+
+      - name: Test no-git-push check
+        run: node --test ./scripts/check-no-git-push.test.mjs
+
+      - name: Validate feature module boundaries
+        run: pnpm check:module-boundaries
+
+      - name: Test feature module boundary check
+        run: node --test ./scripts/check-module-boundaries.test.mjs
+
+      # fork: upstream runs '.github/scripts/tests/*.test.mjs'. The files left out here assert
+      # the wiring of upstream workflows the fork deleted (pr-trusted, release-verify,
+      # cloud-readiness, runner-chaos-evals) or replaced (docker.yml, refresh-lockfile.yml).
+      - name: Test PR quality-gate scripts
+        run: >-
+          node --test
+          .github/scripts/tests/check-pr-*.test.mjs
+          .github/scripts/tests/fetch-pr-files.test.mjs
+          .github/scripts/tests/get-bot-token.test.mjs
+          .github/scripts/tests/run-quality-gates.test.mjs
+
+      # fork: the skip pattern drops only the tests that read pr-trusted.yml or assert that
+      # pr.yml calls it; the shard partition tests themselves still run.
+      - name: Test general-server and e2e shard partitions
+        run: >-
+          node --test
+          --test-skip-pattern="trusted PR workflow|PR workflow wiring|stacked PR scope selector"
+          ./scripts/__tests__/run-vitest-stable-shard.test.mjs
+          ./scripts/__tests__/e2e-shard.test.mjs
+
+      # fork: upstream also runs release-verify-workflow.test.mjs (release-verify.yml is deleted).
+      - name: Test cloud source verification and image contract
+        run: node --test ./scripts/cloud-source-verification.test.mjs ./scripts/standard-image-contract.test.mjs
+
+      - name: Test standalone package build concurrency
+        run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
+
+      - name: Validate release package manifest
+        run: node ./scripts/release-package-map.mjs check
+
+      - name: Verify release package bootstrap for changed manifests
+        run: |
+          mapfile -t changed_paths < <(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
+          PAPERCLIP_RELEASE_BOOTSTRAP_BASE_SHA="${{ github.event.pull_request.base.sha }}" \
+            node ./scripts/check-release-package-bootstrap.mjs "${changed_paths[@]}"
+
+      # Each lane resolves a stale lockfile inline; this early check still
+      # fails fast when the merge tree cannot resolve at all.
+      - name: Validate dependency resolution
+        # fork: GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can resolve
+        # the internal @pixel-nomad-global adapter package (.npmrc auths with ${GITHUB_TOKEN}).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+
+  typecheck_build_gaps:
+    # fork: upstream's "Typecheck + Release Registry" without test:release-registry, which
+    # asserts upstream's npm and cloud release workflows.
+    name: Typecheck build gaps
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+
+      - name: Locate pnpm store
+        id: pnpm_store
+        run: |
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "arch=$(node -p 'process.arch')" >> "$GITHUB_OUTPUT"
+
+      # fork: restore and save. Upstream restores only, because its master writes the
+      # cache; nothing on the fork's master does.
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-
+
+      - name: Install dependencies
+        # fork: GITHUB_TOKEN overridden with the GH_PACKAGES_TOKEN PAT so pnpm can read
+        # the internal @pixel-nomad-global/hermes-paperclip-adapter package from
+        # GitHub Packages (.npmrc auths with ${GITHUB_TOKEN}); the ephemeral
+        # workflow token cannot read a package owned by a different repo.
+        # A stale lockfile for the merge tree is resolved inline (upstream behaviour).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo '::notice title=Lockfile::checked-in lockfile is stale for this merge tree; resolving it inline'
+            pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          fi
+
+      - name: Typecheck workspaces whose build scripts skip TypeScript
+        run: pnpm run typecheck:build-gaps
+
+  general_tests:
+    name: General tests (${{ matrix.group_label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Upstream's shape: the server suite is pinned to maxWorkers=1, so it only
+          # parallelises across runners. The chat integration suite splits across three
+          # lanes and the rest levels across twelve duration-balanced shards.
+          - group: general-server-without-chat
+            group_label: server (1/12)
+            shard_index: 0
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (2/12)
+            shard_index: 1
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (3/12)
+            shard_index: 2
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (4/12)
+            shard_index: 3
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (5/12)
+            shard_index: 4
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (6/12)
+            shard_index: 5
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (7/12)
+            shard_index: 6
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (8/12)
+            shard_index: 7
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (9/12)
+            shard_index: 8
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (10/12)
+            shard_index: 9
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (11/12)
+            shard_index: 10
+            shard_count: 12
+          - group: general-server-without-chat
+            group_label: server (12/12)
+            shard_index: 11
+            shard_count: 12
+          - group: general-chat
+            group_label: chat (1/3)
+            shard_index: 0
+            shard_count: 3
+          - group: general-chat
+            group_label: chat (2/3)
+            shard_index: 1
+            shard_count: 3
+          - group: general-chat
+            group_label: chat (3/3)
+            shard_index: 2
+            shard_count: 3
+          - group: general-workspaces-a
+            group_label: workspaces-a (1/2)
+            shard_index: 0
+            shard_count: 2
+          - group: general-workspaces-a
+            group_label: workspaces-a (2/2)
+            shard_index: 1
+            shard_count: 2
+          - group: general-workspaces-b
+            group_label: workspaces-b
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+
+      - name: Locate pnpm store
+        id: pnpm_store
+        run: |
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "arch=$(node -p 'process.arch')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-
+
+      - name: Install dependencies
+        # fork: GH_PACKAGES_TOKEN for the adapter package (see typecheck_build_gaps).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo '::notice title=Lockfile::checked-in lockfile is stale for this merge tree; resolving it inline'
+            pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          fi
+
+      - name: Run grouped general test suites
+        run: |
+          if [ -n "${{ matrix.shard_count }}" ]; then
+            pnpm test:run:general -- --group '${{ matrix.group }}' \
+              --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }}
+          else
+            pnpm test:run:general -- --group '${{ matrix.group }}'
+          fi
+
+  docker_context_integrity:
+    name: Docker context integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      # Same .dockerignore semantics as the real image builds: a context-slimming
+      # change that strips a committed build input fails here, on the pull request,
+      # instead of in the post-merge image build.
+      - name: Run generated-file drift checks against the Docker build context
+        run: docker buildx build --file .github/docker-context-checks.Dockerfile .
+
+  verify_paperclip_runner:
+    name: Verify Paperclip Runner (${{ matrix.lane_label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The four lanes union to exactly check:all. The last vitest shard also runs the
+          # native-runner server suite (see the note at the top about the "PR" name).
+          - lane_label: static checks
+            command: check:static
+          - lane_label: rust
+            command: check:runner
+          - lane_label: vitest 1/2
+            command: test:typescript:vitest --shard=1/2
+          - lane_label: vitest 2/2
+            command: test:typescript:vitest --shard=2/2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+
+      - name: Locate pnpm store
+        id: pnpm_store
+        run: |
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "arch=$(node -p 'process.arch')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-
+
+      - name: Install dependencies
+        # fork: GH_PACKAGES_TOKEN for the adapter package (see typecheck_build_gaps).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo '::notice title=Lockfile::checked-in lockfile is stale for this merge tree; resolving it inline'
+            pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          fi
+
+      - name: Verify Paperclip Runner
+        # pnpm appends trailing args to the end of the script's shell chain,
+        # so the vitest lanes' --shard lands on `vitest run`. Do not add a
+        # `--` separator: pnpm forwards it literally and vitest would then
+        # read the shard flag as a test filter.
+        run: pnpm --filter @paperclipai/paperclip-runner ${{ matrix.command }}
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+
+      - name: Locate pnpm store
+        id: pnpm_store
+        run: |
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "arch=$(node -p 'process.arch')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-
+
+      - name: Install dependencies
+        # fork: GH_PACKAGES_TOKEN for the adapter package (see typecheck_build_gaps).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo '::notice title=Lockfile::checked-in lockfile is stale for this merge tree; resolving it inline'
+            pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          fi
+
+      - name: Build Runner Evalbook viewer
+        run: pnpm --filter @paperclipai/paperclip-runner build:issue-thread
+
+      - name: Build
+        run: pnpm build
+
+  verify_serialized_server:
+    name: Verify serialized server suites (${{ matrix.shard_label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Balanced by recorded duration (scripts/serialized-shard-durations.json).
+          - shard_index: 0
+            shard_count: 9
+            shard_label: 1/9
+          - shard_index: 1
+            shard_count: 9
+            shard_label: 2/9
+          - shard_index: 2
+            shard_count: 9
+            shard_label: 3/9
+          - shard_index: 3
+            shard_count: 9
+            shard_label: 4/9
+          - shard_index: 4
+            shard_count: 9
+            shard_label: 5/9
+          - shard_index: 5
+            shard_count: 9
+            shard_label: 6/9
+          - shard_index: 6
+            shard_count: 9
+            shard_label: 7/9
+          - shard_index: 7
+            shard_count: 9
+            shard_label: 8/9
+          - shard_index: 8
+            shard_count: 9
+            shard_label: 9/9
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+
+      - name: Locate pnpm store
+        id: pnpm_store
+        run: |
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "arch=$(node -p 'process.arch')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-
+
+      - name: Install dependencies
+        # fork: GH_PACKAGES_TOKEN for the adapter package (see typecheck_build_gaps).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo '::notice title=Lockfile::checked-in lockfile is stale for this merge tree; resolving it inline'
+            pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          fi
+
+      - name: Run serialized server test shard
+        run: pnpm test:run:serialized -- --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }}
+
+  canary_dry_run:
+    name: Canary Dry Run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+
+      - name: Locate pnpm store
+        id: pnpm_store
+        run: |
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "arch=$(node -p 'process.arch')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-
+
+      - name: Install dependencies
+        # fork: GH_PACKAGES_TOKEN for the adapter package (see typecheck_build_gaps).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo '::notice title=Lockfile::checked-in lockfile is stale for this merge tree; resolving it inline'
+            pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          fi
+
+      # `release.sh` always executes its Step 2/7 workspace build, even when
+      # `--skip-verify` bypasses the initial verification gate. release.sh
+      # also requires a clean working tree, and the install step may have
+      # resolved a stale lockfile in place, so stage any changed lockfile into
+      # an ephemeral local commit.
+      # fork: upstream's next step (Grok from a clean public npm install) checks
+      # upstream's published npm package, not this tree, so it is not carried.
+      - name: Release canary dry run via release.sh internal build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          git checkout -B master HEAD
+          if git diff --quiet pnpm-lock.yaml; then
+            git checkout -- pnpm-lock.yaml
+          else
+            git add pnpm-lock.yaml
+            git -c user.email=ci@paperclip.local -c user.name=CI \
+              commit --no-verify -m "ci(canary): stage regenerated lockfile"
+          fi
+          ./scripts/release.sh canary --skip-verify --dry-run
+
+  verify:
+    # Preserve the legacy aggregate check name while the work runs in parallel.
+    name: verify
+    if: ${{ always() }}
+    needs: [policy, typecheck_build_gaps, general_tests, verify_paperclip_runner, build, docker_context_integrity, verify_serialized_server, canary_dry_run]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # fork: upstream's verify leaves the serialized and canary lanes out (they are
+      # separate required checks there). The fork has no required checks, so this one
+      # aggregate covers every non-e2e lane.
+      - name: Fail if any split verify lane failed
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck_build_gaps.result }}
+          GENERAL_TESTS_RESULT: ${{ needs.general_tests.result }}
+          RUNNER_VERIFICATION_RESULT: ${{ needs.verify_paperclip_runner.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          DOCKER_CONTEXT_INTEGRITY_RESULT: ${{ needs.docker_context_integrity.result }}
+          SERIALIZED_RESULT: ${{ needs.verify_serialized_server.result }}
+          CANARY_RESULT: ${{ needs.canary_dry_run.result }}
+        run: |
+          test "$POLICY_RESULT" = "success"
+          test "$TYPECHECK_RESULT" = "success"
+          test "$GENERAL_TESTS_RESULT" = "success"
+          test "$RUNNER_VERIFICATION_RESULT" = "success"
+          test "$BUILD_RESULT" = "success"
+          test "$DOCKER_CONTEXT_INTEGRITY_RESULT" = "success"
+          test "$SERIALIZED_RESULT" = "success"
+          test "$CANARY_RESULT" = "success"
+
+  e2e_shards:
+    name: e2e shard (${{ matrix.shard_label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Playwright is pinned to workers=1 (every spec shares one throwaway server),
+          # so it parallelises across runners; each shard boots its own server.
+          - shard_index: 0
+            shard_count: 8
+            shard_label: 1/8
+          - shard_index: 1
+            shard_count: 8
+            shard_label: 2/8
+          - shard_index: 2
+            shard_count: 8
+            shard_label: 3/8
+          - shard_index: 3
+            shard_count: 8
+            shard_label: 4/8
+          - shard_index: 4
+            shard_count: 8
+            shard_label: 5/8
+          - shard_index: 5
+            shard_count: 8
+            shard_label: 6/8
+          - shard_index: 6
+            shard_count: 8
+            shard_label: 7/8
+          - shard_index: 7
+            shard_count: 8
+            shard_label: 8/8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js for pnpm bootstrap
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        env:
+          NPM_CONFIG_AUDIT: "false"
+          NPM_CONFIG_FUND: "false"
+          NPM_CONFIG_UPDATE_NOTIFIER: "false"
+        with:
+          version: 9.15.4
+
+      - name: Locate pnpm store
+        id: pnpm_store
+        run: |
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "arch=$(node -p 'process.arch')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-${{ steps.pnpm_store.outputs.arch }}-pnpm-
+
+      - name: Install dependencies
+        # fork: GH_PACKAGES_TOKEN for the adapter package (see typecheck_build_gaps).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo '::notice title=Lockfile::checked-in lockfile is stale for this merge tree; resolving it inline'
+            pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
+            pnpm install --frozen-lockfile
+          fi
+
+      - name: Verify runner Chrome
+        # GitHub's Ubuntu runner image ships Google Chrome; use it instead of
+        # downloading Playwright browser bundles inside the job budget.
+        run: google-chrome --version
+
+      - name: Generate Paperclip config
+        run: |
+          mkdir -p ~/.paperclip/instances/default
+          cat > ~/.paperclip/instances/default/config.json << 'CONF'
+          {
+            "$meta": { "version": 1, "updatedAt": "2026-01-01T00:00:00.000Z", "source": "onboard" },
+            "database": { "mode": "embedded-postgres" },
+            "logging": { "mode": "file" },
+            "server": { "deploymentMode": "local_trusted", "host": "127.0.0.1", "port": 3100 },
+            "auth": { "baseUrlMode": "auto" },
+            "storage": { "provider": "local_disk" },
+            "secrets": { "provider": "local_encrypted", "strictMode": false }
+          }
+          CONF
+
+      - name: Run e2e tests
+        env:
+          PAPERCLIP_E2E_SKIP_LLM: "true"
+          PAPERCLIP_PLAYWRIGHT_CHANNEL: "chrome"
+        run: |
+          # Partition by recorded spec duration (Playwright's --shard balances by count).
+          specs="$(node ./scripts/e2e-shard.mjs \
+            --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }})"
+          echo "shard ${{ matrix.shard_label }} specs: $specs"
+          # specs is an intentional argument list.
+          # shellcheck disable=SC2086
+          pnpm run test:e2e $specs
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.shard_index }}
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+          retention-days: 14
+
+  e2e:
+    # Preserve the legacy e2e check name while the specs run sharded above.
+    name: e2e
+    if: ${{ always() }}
+    needs: [policy, e2e_shards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Fail if any e2e shard failed
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          E2E_SHARDS_RESULT: ${{ needs.e2e_shards.result }}
+        run: |
+          test "$POLICY_RESULT" = "success"
+          test "$E2E_SHARDS_RESULT" = "success"
