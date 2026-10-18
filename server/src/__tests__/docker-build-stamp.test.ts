@@ -69,7 +69,8 @@ describe("docker build-stamp wiring", () => {
   });
 
   it("passes PAPERCLIP_BUILD_COMMIT as a build-arg for standard and explicit preview builds", () => {
-    for (const [name, source] of [["standard", workflow], ["preview", previewWorkflow]]) {
+    // Pixel Nomad fork: the fork's release.yml builds no image, so only docker.yml is checked.
+    for (const [name, source] of [["standard", workflow]]) {
       expect(source, `${name} must pass the source commit into the image build`)
         .toMatch(/^\s*PAPERCLIP_BUILD_COMMIT=\$\{\{ (?:github.sha|inputs.source_ref) \}\}$/m);
     }
@@ -126,7 +127,9 @@ describe("Standard image remote provider pack", () => {
     expect(dockerfile).not.toContain("provision-grok.mjs");
   });
 
-  it("lets explicit cloud preview builds inherit the same pack and configuration", () => {
+  // Pixel Nomad fork: skipped. It asserts `target: cloud` in upstream's release.yml (their
+  // hosted product); the fork's release.yml builds no cloud image.
+  it.skip("lets explicit cloud preview builds inherit the same pack and configuration", () => {
     const cloud = stageBody(dockerfile, "cloud");
     expect(cloud).toContain("FROM production AS cloud");
     expect(cloud).not.toContain("/opt/paperclip-runner/provider-pack");
