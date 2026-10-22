@@ -71,7 +71,7 @@
     "@paperclipai/shared": "workspace:*",
     "@paperclipai/skills-catalog": "workspace:*",
     "@photon-ai/advanced-imessage": "2.1.0",
-    "@pixel-nomad-global/hermes-paperclip-adapter": "^0.3.5",
+    "@pixel-nomad-global/hermes-paperclip-adapter": "^0.3.6",
     "@vercel/connect": "2.3.3",
     "acorn": "8.18.0",
     "acpx": "0.13.1",

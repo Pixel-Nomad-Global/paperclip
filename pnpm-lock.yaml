@@ -956,8 +956,8 @@ importers:
         specifier: 2.1.0
         version: 2.1.0(@grpc/grpc-js@1.14.5)(nice-grpc-common@2.0.4)(nice-grpc@2.1.17)
       '@pixel-nomad-global/hermes-paperclip-adapter':
-        specifier: ^0.3.5
-        version: 0.3.5
+        specifier: ^0.3.6
+        version: 0.3.6
       '@vercel/connect':
         specifier: 2.3.3
         version: 2.3.3(@chat-adapter/slack@4.39.0(patch_hash=226jj24akljccsfbw7bcxujz4u)(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(better-auth@1.7.2(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(kysely@0.29.5)(pg@8.18.0)(postgres@3.4.9(patch_hash=sryle6qd5qfmnxvoebal4gashi)))(pg@8.18.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(tsx@4.23.15)))
@@ -2061,11 +2061,11 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.hirok.io'
+    deprecated: 'Merged into tsx: https://tsx.is'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
-    deprecated: 'Merged into tsx: https://tsx.hirok.io'
+    deprecated: 'Merged into tsx: https://tsx.is'
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -3519,8 +3519,8 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
-  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.5':
-    resolution: {integrity: sha512-N4kw+aRgx6m+GM0BpIL5n/+z+v/d+wZ+n6xMA425vLGaidWcXqe+aHhUUl0Hntau5vvcr1NhOL+Bx4msRlWfNw==, tarball: https://npm.pkg.github.com/download/@pixel-nomad-global/hermes-paperclip-adapter/0.3.5/43b1ca82b0e8bebdbdd90fec35b33bb9d2b075c1}
+  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.6':
+    resolution: {integrity: sha512-bIa5Z7vYqa9dx+daYDVy+O7zzWDlvj/R0rM/Z1YsDC+SsbNVhV7pCpvOcdI+z2lY1pPGEPD7l8llTBnoNQZQ6g==, tarball: https://npm.pkg.github.com/download/@pixel-nomad-global/hermes-paperclip-adapter/0.3.6/bce140c8bdac188b5e6aeb5005a31482dc8b3cf4}
     engines: {node: '>=20.0.0'}
 
   '@playwright/test@1.62.1':
@@ -11404,7 +11404,7 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.5':
+  '@pixel-nomad-global/hermes-paperclip-adapter@0.3.6':
     dependencies:
       '@paperclipai/adapter-utils': 2026.1012.0
       picocolors: 1.1.1
